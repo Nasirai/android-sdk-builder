@@ -1,4 +1,4 @@
-name: Build Android SDK
+name: Build Android SDK for Godot 4.7
 
 on:
   workflow_dispatch:
@@ -8,20 +8,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Install Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
+      - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Show SDK information
+      - name: Accept licenses
+        run: yes | sdkmanager --licenses
+
+      - name: Install Godot Android SDK packages
         run: |
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          sdkmanager --version
-          sdkmanager --list | head -40
+          sdkmanager \
+            "platform-tools" \
+            "build-tools;35.0.1" \
+            "platforms;android-35" \
+            "cmdline-tools;latest" \
+            "cmake;3.10.2.4988404" \
+            "ndk;28.1.13356709"
+
+      - name: Show installed packages
+        run: sdkmanager --list_installed
+
+      - name: Create SDK archive
+        run: |
+          cd /usr/local/lib/android
+          tar -czf $GITHUB_WORKSPACE/android-sdk-godot47.tar.gz sdk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-sdk-godot47
+          path: android-sdk-godot47.tar.gz
