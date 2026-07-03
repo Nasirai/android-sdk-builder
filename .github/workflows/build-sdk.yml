@@ -7,25 +7,33 @@ jobs:
   build-sdk:
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    env:
+      GODOT_SDK: ${{ github.workspace }}/godot-sdk
 
-      - name: Install Java 17
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Setup Android tools
         uses: android-actions/setup-android@v3
 
-      - name: Accept licenses
-        run: yes | sdkmanager --licenses
-
-      - name: Install Godot Android SDK packages
+      - name: Create empty SDK
         run: |
-          sdkmanager \
+          rm -rf "$GODOT_SDK"
+          mkdir -p "$GODOT_SDK"
+
+      - name: Accept licenses
+        run: |
+          yes | sdkmanager --sdk_root="$GODOT_SDK" --licenses
+
+      - name: Install only Godot packages
+        run: |
+          sdkmanager --sdk_root="$GODOT_SDK" \
             "platform-tools" \
             "build-tools;35.0.1" \
             "platforms;android-35" \
@@ -34,15 +42,20 @@ jobs:
             "ndk;28.1.13356709"
 
       - name: Show installed packages
-        run: sdkmanager --list_installed
-
-      - name: Create SDK archive
         run: |
-          cd /usr/local/lib/android
-          tar -czf $GITHUB_WORKSPACE/android-sdk-godot47.tar.gz sdk
+          sdkmanager --sdk_root="$GODOT_SDK" --list_installed
+
+      - name: Show directory tree
+        run: |
+          find "$GODOT_SDK" -maxdepth 2
+
+      - name: Archive SDK
+        run: |
+          cd "${{ github.workspace }}"
+          tar -cf godot-sdk.tar godot-sdk
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-sdk-godot47
-          path: android-sdk-godot47.tar.gz
+          name: godot-sdk
+          path: godot-sdk.tar
