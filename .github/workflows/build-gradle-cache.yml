@@ -64,3 +64,15 @@ jobs:
           echo "Gradle cache:"
           du -sh ~/.gradle
           find ~/.gradle/caches -type f | grep -E '8\.6\.1|com.android.application' | head -30
+
+      - name: Package Gradle dependency cache
+        run: |
+          mkdir -p gradle-cache
+          cp -a ~/.gradle/caches/modules-2 gradle-cache/
+
+      - name: Upload Gradle dependency cache
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-dependencies
+          path: gradle-cache
+          retention-days: 7
