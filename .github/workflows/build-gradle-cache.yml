@@ -1,4 +1,4 @@
-name: Build Gradle Cache for Godot 4.7
+name: Build Gradle Cache
 
 on:
   workflow_dispatch:
@@ -7,39 +7,26 @@ jobs:
   build-gradle-cache:
     runs-on: ubuntu-latest
 
-    env:
-      GRADLE_USER_HOME: ${{ github.workspace }}/gradle-cache
-      ANDROID_GRADLE_PLUGIN: 8.6.1
-      KOTLIN_VERSION: 2.1.21
-
     steps:
-      - name: Install Java 17
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
-
-      - name: Create clean Gradle environment
-        run: |
-          rm -rf "$GRADLE_USER_HOME"
-          mkdir -p "$GRADLE_USER_HOME"
 
       - name: Create test Gradle project
         run: |
-          mkdir -p test-project
-          cd test-project
+          mkdir -p test-gradle
+          cd test-gradle
 
-          cat > settings.gradle <<EOF
+          cat > settings.gradle <<'EOF'
           pluginManagement {
-              plugins {
-                  id 'com.android.application' version '${ANDROID_GRADLE_PLUGIN}'
-                  id 'org.jetbrains.kotlin.android' version '${KOTLIN_VERSION}'
-              }
               repositories {
                   google()
                   mavenCentral()
@@ -48,46 +35,30 @@ jobs:
           }
 
           dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
                   google()
                   mavenCentral()
               }
           }
 
-          rootProject.name = 'godot-gradle-cache-test'
+          rootProject.name = "test-gradle"
           EOF
 
-          cat > build.gradle <<EOF
+          cat > build.gradle <<'EOF'
           plugins {
-              id 'com.android.application' apply false
-              id 'org.jetbrains.kotlin.android' apply false
+              id 'com.android.application' version '8.6.1' apply false
+              id 'org.jetbrains.kotlin.android' version '2.1.21' apply false
           }
           EOF
 
-      - name: Resolve Android Gradle dependencies
+      - name: Download Android Gradle Plugin
+        working-directory: test-gradle
         run: |
-          cd test-project
-          gradle tasks --refresh-dependencies --stacktrace
+          gradle help --refresh-dependencies
 
-      - name: Verify Android Gradle Plugin
+      - name: Show Gradle cache
         run: |
-          echo "Checking downloaded AGP artifacts..."
-          find "$GRADLE_USER_HOME/caches" -type f \
-            | grep -E 'com.android.tools.build|com.android.application' \
-            | head -50
-
-      - name: Show cache size
-        run: |
-          du -sh "$GRADLE_USER_HOME"
-
-      - name: Archive Gradle cache
-        run: |
-          cd "$GRADLE_USER_HOME"
-          tar -czf "${GITHUB_WORKSPACE}/godot-gradle-cache.tar.gz" .
-
-      - name: Upload Gradle cache
-        uses: actions/upload-artifact@v4
-        with:
-          name: godot-gradle-cache
-          path: godot-gradle-cache.tar.gz
-          retention-days: 30
+          echo "Gradle cache:"
+          du -sh ~/.gradle
+          find ~/.gradle/caches -type f | grep -E '8\.6\.1|com.android.application' | head -30
