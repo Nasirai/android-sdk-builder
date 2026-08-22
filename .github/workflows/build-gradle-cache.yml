@@ -33,6 +33,8 @@ jobs:
                   google()
                   mavenCentral()
                   gradlePluginPortal()
+                  maven { url "https://plugins.gradle.org/m2/" }
+                  maven { url "https://central.sonatype.com/repository/maven-snapshots/" }
               }
           }
 
@@ -48,16 +50,17 @@ jobs:
 
           cat > build.gradle <<'EOF'
           plugins {
-              id 'base'
+              id 'com.android.application' version '8.6.1' apply false
+              id 'org.jetbrains.kotlin.android' version '2.1.21' apply false
+          }
+
+          configurations {
+              godotDependencies
           }
 
           repositories {
               google()
               mavenCentral()
-          }
-
-          configurations {
-              godotDependencies
           }
 
           dependencies {
@@ -69,109 +72,93 @@ jobs:
 
           tasks.register('downloadGodotDependencies') {
               doLast {
-                  println "Resolving dependencies..."
-
-                  configurations.godotDependencies.resolve().each { file ->
-                      println "RESOLVED: ${file}"
+                  configurations.godotDependencies.resolve().each {
+                      println "RESOLVED: ${it}"
                   }
               }
           }
           EOF
 
-      - name: Download dependencies into dedicated Gradle home
+      - name: Resolve Android Gradle Plugin and dependencies
         working-directory: test-gradle
         run: |
           gradle --no-daemon \
             --refresh-dependencies \
+            help \
             downloadGodotDependencies
 
-      - name: Verify Kotlin dependency
+      - name: Verify AGP
         run: |
-          echo "=== Kotlin stdlib files ==="
+          test -d \
+            "$GRADLE_USER_HOME/caches/modules-2/files-2.1/com.android.application/com.android.application.gradle.plugin/8.6.1"
 
-          find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.1.21" \
-            -type f -print
-
+      - name: Verify Kotlin stdlib
+        run: |
           test -d \
             "$GRADLE_USER_HOME/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.1.21"
 
-      - name: Verify AndroidX Fragment
+      - name: Verify AndroidX dependencies
         run: |
           test -d \
             "$GRADLE_USER_HOME/caches/modules-2/files-2.1/androidx.fragment/fragment/1.8.6"
 
-      - name: Verify AndroidX SplashScreen
-        run: |
           test -d \
             "$GRADLE_USER_HOME/caches/modules-2/files-2.1/androidx.core/core-splashscreen/1.0.1"
 
-      - name: Verify AndroidX DocumentFile
-        run: |
           test -d \
             "$GRADLE_USER_HOME/caches/modules-2/files-2.1/androidx.documentfile/documentfile/1.1.0"
 
-      - name: Test the same dependencies offline
+      - name: Test dependencies offline
         working-directory: test-gradle
         run: |
           gradle --no-daemon \
             --offline \
+            help \
             downloadGodotDependencies
 
-      - name: Show cache contents
+      - name: Show verified cache
         run: |
-          echo "=== Kotlin ==="
-          find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.1.21" \
-            -type f | sort
+          echo "=== AGP ==="
+          find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/com.android.application/com.android.application.gradle.plugin/8.6.1" \
+            -type f
 
           echo
-          echo "=== Fragment ==="
+          echo "=== Kotlin stdlib ==="
+          find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.1.21" \
+            -type f
+
+          echo
+          echo "=== AndroidX Fragment ==="
           find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/androidx.fragment/fragment/1.8.6" \
-            -type f | sort
+            -type f
 
           echo
           echo "=== SplashScreen ==="
           find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/androidx.core/core-splashscreen/1.0.1" \
-            -type f | sort
+            -type f
 
           echo
           echo "=== DocumentFile ==="
           find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/androidx.documentfile/documentfile/1.1.0" \
-            -type f | sort
+            -type f
 
-      - name: Show cache size
-        run: |
-          du -sh "$GRADLE_USER_HOME/caches/modules-2"
-
-      - name: Package cache
+      - name: Package verified modules cache
         run: |
           rm -rf artifact
-          mkdir artifact
+          mkdir -p artifact
 
           cp -a "$GRADLE_USER_HOME/caches/modules-2" artifact/
 
           cd artifact
-          zip -r "$GITHUB_WORKSPACE/gradle-dependencies-v3.zip" modules-2
+          tar -czf "$GITHUB_WORKSPACE/gradle-modules-cache.tar.gz" modules-2
 
-      - name: Verify ZIP before upload
+      - name: Show artifact size
         run: |
-          echo "=== Kotlin in ZIP ==="
-          unzip -l gradle-dependencies-v3.zip \
-            | grep 'kotlin-stdlib-2.1.21' \
-            | head -20
-
-          echo
-          echo "=== AndroidX in ZIP ==="
-          unzip -l gradle-dependencies-v3.zip \
-            | grep -E 'fragment-1.8.6|core-splashscreen-1.0.1|documentfile-1.1.0' \
-            | head -20
-
-          echo
-          echo "=== ZIP size ==="
-          ls -lh gradle-dependencies-v3.zip
+          ls -lh gradle-modules-cache.tar.gz
 
       - name: Upload verified cache
         uses: actions/upload-artifact@v4
         with:
-          name: gradle-dependencies-v3
-          path: gradle-dependencies-v3.zip
+          name: gradle-modules-cache
+          path: gradle-modules-cache.tar.gz
           retention-days: 7
