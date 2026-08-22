@@ -8,9 +8,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
@@ -22,9 +19,9 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Create Android dependency test project
+      - name: Create dependency test project
         run: |
-          mkdir -p test-gradle/app/src/main
+          mkdir -p test-gradle
           cd test-gradle
 
           cat > settings.gradle <<'EOF'
@@ -37,7 +34,6 @@ jobs:
           }
 
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
               repositories {
                   google()
                   mavenCentral()
@@ -45,110 +41,104 @@ jobs:
           }
 
           rootProject.name = "test-gradle"
-          include(":app")
           EOF
 
           cat > build.gradle <<'EOF'
           plugins {
-              id 'com.android.application' version '8.6.1' apply false
-              id 'org.jetbrains.kotlin.android' version '2.1.21' apply false
-          }
-          EOF
-
-          cat > app/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application'
-              id 'org.jetbrains.kotlin.android'
+              id 'base'
           }
 
-          android {
-              namespace 'com.example.testgradle'
-              compileSdk 35
+          repositories {
+              google()
+              mavenCentral()
+          }
 
-              defaultConfig {
-                  applicationId 'com.example.testgradle'
-                  minSdk 23
-                  targetSdk 36
-                  versionCode 1
-                  versionName '1.0'
-              }
+          configurations {
+              godotDependencies
           }
 
           dependencies {
-              implementation 'androidx.fragment:fragment:1.8.6'
-              implementation 'androidx.core:core-splashscreen:1.0.1'
-              implementation 'androidx.documentfile:documentfile:1.1.0'
+              // Direct dependency used by the Godot 4.7 Android project.
+              godotDependencies 'org.jetbrains.kotlin:kotlin-stdlib:2.1.21'
+
+              // Direct dependencies used by the Godot 4.7 Android project.
+              godotDependencies 'androidx.fragment:fragment:1.8.6'
+              godotDependencies 'androidx.core:core-splashscreen:1.0.1'
+              godotDependencies 'androidx.documentfile:documentfile:1.1.0'
+          }
+
+          tasks.register('downloadGodotDependencies') {
+              doLast {
+                  configurations.godotDependencies.files.each {
+                      println "Resolved: $it"
+                  }
+              }
           }
           EOF
 
-          cat > app/src/main/AndroidManifest.xml <<'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <application
-                  android:theme="@style/AppTheme"
-                  android:label="Test">
-              </application>
-          </manifest>
-          EOF
-
-          mkdir -p app/src/main/res/values
-
-          cat > app/src/main/res/values/styles.xml <<'EOF'
-          <resources>
-              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
-              </style>
-          </resources>
-          EOF
-
-      - name: Resolve exact AndroidX dependencies
+      - name: Download all required dependencies
         working-directory: test-gradle
         run: |
-          gradle \
-            :app:dependencies \
-            --configuration debugRuntimeClasspath \
-            --refresh-dependencies
+          gradle downloadGodotDependencies --refresh-dependencies
 
-      - name: Verify exact dependencies are cached
+      - name: Verify required files exist
         run: |
-          echo "Checking required AndroidX artifacts..."
+          echo "Checking Kotlin stdlib..."
+          test -d "$HOME/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.1.21"
 
-          test -d ~/.gradle/caches/modules-2/files-2.1/androidx/fragment/fragment/1.8.6
-          test -d ~/.gradle/caches/modules-2/files-2.1/androidx/core/core-splashscreen/1.0.1
-          test -d ~/.gradle/caches/modules-2/files-2.1/androidx/documentfile/documentfile/1.1.0
+          echo "Checking AndroidX Fragment..."
+          test -d "$HOME/.gradle/caches/modules-2/files-2.1/androidx.fragment/fragment/1.8.6"
 
-          echo "All three required AndroidX dependencies are present."
+          echo "Checking AndroidX SplashScreen..."
+          test -d "$HOME/.gradle/caches/modules-2/files-2.1/androidx.core/core-splashscreen/1.0.1"
 
-      - name: Verify offline dependency resolution
+          echo "Checking AndroidX DocumentFile..."
+          test -d "$HOME/.gradle/caches/modules-2/files-2.1/androidx.documentfile/documentfile/1.1.0"
+
+          echo
+          echo "All required direct dependencies are present."
+
+      - name: Test dependency resolution completely offline
         working-directory: test-gradle
         run: |
-          gradle \
-            :app:dependencies \
-            --configuration debugRuntimeClasspath \
-            --offline
+          gradle downloadGodotDependencies --offline
+
+      - name: Show relevant cache contents
+        run: |
+          echo "=== Kotlin stdlib ==="
+          find "$HOME/.gradle/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.1.21" \
+            -type f | sort
+
+          echo
+          echo "=== AndroidX Fragment ==="
+          find "$HOME/.gradle/caches/modules-2/files-2.1/androidx.fragment/fragment/1.8.6" \
+            -type f | sort
+
+          echo
+          echo "=== AndroidX SplashScreen ==="
+          find "$HOME/.gradle/caches/modules-2/files-2.1/androidx.core/core-splashscreen/1.0.1" \
+            -type f | sort
+
+          echo
+          echo "=== AndroidX DocumentFile ==="
+          find "$HOME/.gradle/caches/modules-2/files-2.1/androidx.documentfile/documentfile/1.1.0" \
+            -type f | sort
 
       - name: Show cache size
         run: |
-          echo "Gradle cache size:"
-          du -sh ~/.gradle
+          echo "Gradle modules-2 cache size:"
+          du -sh "$HOME/.gradle/caches/modules-2"
 
-          echo
-          echo "Modules cache:"
-          du -sh ~/.gradle/caches/modules-2
-
-      - name: Package complete Gradle cache
+      - name: Package Gradle modules cache
         run: |
-          mkdir -p gradle-cache
+          mkdir -p artifact
 
-          cp -a ~/.gradle/caches gradle-cache/
-          cp -a ~/.gradle/wrapper gradle-cache/ 2>/dev/null || true
+          cp -a "$HOME/.gradle/caches/modules-2" artifact/
 
-      - name: Create ZIP
-        run: |
-          cd gradle-cache
-          zip -r ../gradle-dependencies.zip . \
-            -x '*.lock' \
-            -x '*/journal-*'
+          cd artifact
+          zip -r "$GITHUB_WORKSPACE/gradle-dependencies.zip" modules-2
 
-      - name: Show ZIP size
+      - name: Show artifact size
         run: |
           ls -lh gradle-dependencies.zip
 
