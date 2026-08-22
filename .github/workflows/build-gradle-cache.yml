@@ -61,6 +61,11 @@ jobs:
           include(":app")
           EOF
 
+          cat > gradle.properties <<'EOF'
+          android.useAndroidX=true
+          android.enableJetifier=true
+          EOF
+
           cat > build.gradle <<'EOF'
           plugins {
               id 'com.android.application' version '8.6.1' apply false
@@ -89,7 +94,6 @@ jobs:
 
           dependencies {
               implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.1.21'
-
               implementation 'androidx.fragment:fragment:1.8.6'
               implementation 'androidx.core:core-splashscreen:1.0.1'
               implementation 'androidx.documentfile:documentfile:1.1.0'
@@ -98,17 +102,10 @@ jobs:
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-
               <application
                   android:theme="@style/AppTheme"
                   android:label="Gradle Cache Test">
-
-                  <activity
-                      android:name="android.app.Activity"
-                      android:exported="true" />
-
               </application>
-
           </manifest>
           EOF
 
@@ -127,37 +124,6 @@ jobs:
             --refresh-dependencies \
             :app:assembleDebug
 
-      - name: Show important downloaded dependencies
-        run: |
-          echo "=== Android Gradle Plugin ==="
-          find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/com.android.application" \
-            -type f | sort | head -30
-
-          echo
-          echo "=== AAPT2 ==="
-          find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/com.android.tools.build/aapt2" \
-            -type f | sort
-
-          echo
-          echo "=== Kotlin stdlib ==="
-          find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/org.jetbrains.kotlin/kotlin-stdlib/2.1.21" \
-            -type f | sort
-
-          echo
-          echo "=== AndroidX Fragment ==="
-          find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/androidx.fragment/fragment/1.8.6" \
-            -type f | sort
-
-          echo
-          echo "=== SplashScreen ==="
-          find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/androidx.core/core-splashscreen/1.0.1" \
-            -type f | sort
-
-          echo
-          echo "=== DocumentFile ==="
-          find "$GRADLE_USER_HOME/caches/modules-2/files-2.1/androidx.documentfile/documentfile/1.1.0" \
-            -type f | sort
-
       - name: Test the downloaded cache completely offline
         working-directory: test-gradle
         run: |
@@ -174,18 +140,7 @@ jobs:
         run: |
           rm -rf artifact
           mkdir -p artifact
-
-          cp -a "$GRADLE_USER_HOME/caches/modules-2" \
-            artifact/modules-2
-
-      - name: Show artifact contents
-        run: |
-          echo "Artifact root:"
-          find artifact/modules-2 -maxdepth 2 -type d | sort | head -50
-
-          echo
-          echo "Artifact size:"
-          du -sh artifact/modules-2
+          cp -a "$GRADLE_USER_HOME/caches/modules-2" artifact/modules-2
 
       - name: Upload Gradle modules cache
         uses: actions/upload-artifact@v4
