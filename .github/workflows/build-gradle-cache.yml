@@ -17,14 +17,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
+      - name: Set up Gradle 8.11.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
 
-      - name: Create test Gradle project
+      - name: Create Android dependency test project
         run: |
-          mkdir -p test-gradle
+          mkdir -p test-gradle/app/src/main
           cd test-gradle
 
           cat > settings.gradle <<'EOF'
@@ -45,6 +45,7 @@ jobs:
           }
 
           rootProject.name = "test-gradle"
+          include(":app")
           EOF
 
           cat > build.gradle <<'EOF'
@@ -52,55 +53,108 @@ jobs:
               id 'com.android.application' version '8.6.1' apply false
               id 'org.jetbrains.kotlin.android' version '2.1.21' apply false
           }
+          EOF
 
-          configurations {
-              godotDependencies
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'com.example.testgradle'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.example.testgradle'
+                  minSdk 23
+                  targetSdk 36
+                  versionCode 1
+                  versionName '1.0'
+              }
           }
 
           dependencies {
-              godotDependencies 'androidx.fragment:fragment:1.8.6'
-              godotDependencies 'androidx.core:core-splashscreen:1.0.1'
-              godotDependencies 'androidx.documentfile:documentfile:1.1.0'
-          }
-
-          tasks.register('downloadGodotDependencies') {
-              doLast {
-                  configurations.godotDependencies.files.each {
-                      println "Downloaded: $it"
-                  }
-              }
+              implementation 'androidx.fragment:fragment:1.8.6'
+              implementation 'androidx.core:core-splashscreen:1.0.1'
+              implementation 'androidx.documentfile:documentfile:1.1.0'
           }
           EOF
 
-      - name: Download AndroidX dependencies
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:theme="@style/AppTheme"
+                  android:label="Test">
+              </application>
+          </manifest>
+          EOF
+
+          mkdir -p app/src/main/res/values
+
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+              </style>
+          </resources>
+          EOF
+
+      - name: Resolve exact AndroidX dependencies
         working-directory: test-gradle
         run: |
-          gradle downloadGodotDependencies --refresh-dependencies
+          gradle \
+            :app:dependencies \
+            --configuration debugRuntimeClasspath \
+            --refresh-dependencies
 
-      - name: Verify AndroidX dependencies
+      - name: Verify exact dependencies are cached
         run: |
-          echo "========================================"
-          echo "Downloaded AndroidX dependencies:"
-          echo "========================================"
+          echo "Checking required AndroidX artifacts..."
 
-          find ~/.gradle/caches/modules-2/files-2.1/androidx \
-            -type f | sort
+          test -d ~/.gradle/caches/modules-2/files-2.1/androidx/fragment/fragment/1.8.6
+          test -d ~/.gradle/caches/modules-2/files-2.1/androidx/core/core-splashscreen/1.0.1
+          test -d ~/.gradle/caches/modules-2/files-2.1/androidx/documentfile/documentfile/1.1.0
 
-          echo ""
-          echo "========================================"
-          echo "Cache size:"
-          echo "========================================"
+          echo "All three required AndroidX dependencies are present."
 
+      - name: Verify offline dependency resolution
+        working-directory: test-gradle
+        run: |
+          gradle \
+            :app:dependencies \
+            --configuration debugRuntimeClasspath \
+            --offline
+
+      - name: Show cache size
+        run: |
+          echo "Gradle cache size:"
+          du -sh ~/.gradle
+
+          echo
+          echo "Modules cache:"
           du -sh ~/.gradle/caches/modules-2
 
-      - name: Package Gradle dependency cache
+      - name: Package complete Gradle cache
         run: |
           mkdir -p gradle-cache
-          cp -a ~/.gradle/caches/modules-2 gradle-cache/
+
+          cp -a ~/.gradle/caches gradle-cache/
+          cp -a ~/.gradle/wrapper gradle-cache/ 2>/dev/null || true
+
+      - name: Create ZIP
+        run: |
+          cd gradle-cache
+          zip -r ../gradle-dependencies.zip . \
+            -x '*.lock' \
+            -x '*/journal-*'
+
+      - name: Show ZIP size
+        run: |
+          ls -lh gradle-dependencies.zip
 
       - name: Upload Gradle dependency cache
         uses: actions/upload-artifact@v4
         with:
           name: gradle-dependencies
-          path: gradle-cache
+          path: gradle-dependencies.zip
           retention-days: 7
